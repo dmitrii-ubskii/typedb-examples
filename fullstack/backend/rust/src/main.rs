@@ -11,48 +11,33 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose::URL_SAFE};
 use futures::{StreamExt, TryStreamExt};
 use serde::Deserialize;
-use serde_json::value::RawValue;
 use serde_with::{NoneAsEmptyString, serde_as};
 use tower_http::cors::{Any, CorsLayer};
-use typedb_driver::{Credentials, DriverOptions, TransactionType, TypeDBDriver};
+use typedb_driver::{
+    Credentials, DriverOptions, TransactionType, TypeDBDriver,
+    answer::{ConceptDocument, JSON},
+};
 
 mod config;
 mod query;
 
-async fn get_page_list(State(driver): State<Arc<TypeDBDriver>>) -> Json<Vec<Box<RawValue>>> {
+async fn get_page_list(State(driver): State<Arc<TypeDBDriver>>) -> Json<JSON> {
     let transaction = driver.transaction(config::TYPEDB_DATABASE, TransactionType::Read).await.unwrap();
     let result = transaction.query(query::PAGE_LIST_QUERY).await.unwrap();
-    Json(
-        result
-            .into_documents()
-            .map_ok(|page| RawValue::from_string(page.into_json().to_string()).unwrap())
-            .try_collect::<Vec<_>>()
-            .await
-            .unwrap(),
-    )
+    Json(JSON::Array(result.into_documents().map_ok(ConceptDocument::into_json).try_collect::<Vec<_>>().await.unwrap()))
 }
 
-async fn get_location_page_list(
-    State(driver): State<Arc<TypeDBDriver>>,
-    Path(place_id): Path<String>,
-) -> Json<Vec<Box<RawValue>>> {
+async fn get_location_page_list(State(driver): State<Arc<TypeDBDriver>>, Path(place_id): Path<String>) -> Json<JSON> {
     let transaction = driver.transaction(config::TYPEDB_DATABASE, TransactionType::Read).await.unwrap();
     let result = transaction.query(query::location_query(&place_id)).await.unwrap();
-    Json(
-        result
-            .into_documents()
-            .map_ok(|doc| RawValue::from_string(doc.into_json().to_string()).unwrap())
-            .try_collect::<Vec<_>>()
-            .await
-            .unwrap(),
-    )
+    Json(JSON::Array(result.into_documents().map_ok(ConceptDocument::into_json).try_collect::<Vec<_>>().await.unwrap()))
 }
 
-async fn get_profile(State(driver): State<Arc<TypeDBDriver>>, Path(id): Path<String>) -> Json<Option<Box<RawValue>>> {
+async fn get_profile(State(driver): State<Arc<TypeDBDriver>>, Path(id): Path<String>) -> Json<Option<JSON>> {
     let transaction = driver.transaction(config::TYPEDB_DATABASE, TransactionType::Read).await.unwrap();
     let result = transaction.query(query::page_query(&id)).await.unwrap();
-    let doc = result.into_documents().next().await;
-    Json(doc.map(|doc| RawValue::from_string(doc.unwrap().into_json().to_string()).unwrap()))
+    let doc = result.into_documents().next().await.transpose().unwrap();
+    Json(doc.map(ConceptDocument::into_json))
 }
 
 async fn get_media(Path(_id): Path<String>) -> impl IntoResponse {
@@ -62,8 +47,7 @@ async fn get_media(Path(_id): Path<String>) -> impl IntoResponse {
 async fn post_media(State(driver): State<Arc<TypeDBDriver>>, headers: HeaderMap, bytes: Bytes) -> impl IntoResponse {
     let data =
         format!("data:{};base64,{}", headers.get("Content-Type").unwrap().to_str().unwrap(), URL_SAFE.encode(bytes));
-    dbg!(&data[..100]);
-    (StatusCode::OK, Json(RawValue::from_string(r#"{"id": "123"}"#.into()).unwrap()))
+    (StatusCode::OK, Json(JSON::String(r#"{"id": "123"}"#.into())))
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,17 +59,10 @@ struct PostQuery {
 async fn get_posts(
     State(driver): State<Arc<TypeDBDriver>>,
     Query(PostQuery { page_id }): Query<PostQuery>,
-) -> Json<Vec<Box<RawValue>>> {
+) -> Json<JSON> {
     let transaction = driver.transaction(config::TYPEDB_DATABASE, TransactionType::Read).await.unwrap();
     let result = transaction.query(query::posts_query(&page_id)).await.unwrap();
-    Json(
-        result
-            .into_documents()
-            .map_ok(|doc| RawValue::from_string(doc.into_json().to_string()).unwrap())
-            .try_collect::<Vec<_>>()
-            .await
-            .unwrap(),
-    )
+    Json(JSON::Array(result.into_documents().map_ok(ConceptDocument::into_json).try_collect::<Vec<_>>().await.unwrap()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -97,17 +74,10 @@ struct CommentQuery {
 async fn get_comments(
     State(driver): State<Arc<TypeDBDriver>>,
     Query(CommentQuery { post_id }): Query<CommentQuery>,
-) -> Json<Vec<Box<RawValue>>> {
+) -> Json<JSON> {
     let transaction = driver.transaction(config::TYPEDB_DATABASE, TransactionType::Read).await.unwrap();
     let result = transaction.query(query::comments_query(&post_id)).await.unwrap();
-    Json(
-        result
-            .into_documents()
-            .map_ok(|doc| RawValue::from_string(doc.into_json().to_string()).unwrap())
-            .try_collect::<Vec<_>>()
-            .await
-            .unwrap(),
-    )
+    Json(JSON::Array(result.into_documents().map_ok(ConceptDocument::into_json).try_collect::<Vec<_>>().await.unwrap()))
 }
 
 #[serde_as]
@@ -155,7 +125,7 @@ async fn post_create_user(
         .await
         .unwrap();
     transaction.commit().await.unwrap();
-    (StatusCode::OK, Json(RawValue::NULL.to_owned()))
+    (StatusCode::OK, Json(()))
 }
 
 #[serde_as]
@@ -194,7 +164,7 @@ async fn post_create_group(
         .await
         .unwrap();
     transaction.commit().await.unwrap();
-    (StatusCode::OK, Json(RawValue::NULL.to_owned()))
+    (StatusCode::OK, Json(()))
 }
 
 #[serde_as]
@@ -230,7 +200,7 @@ async fn post_create_organization(
         .await
         .unwrap();
     transaction.commit().await.unwrap();
-    (StatusCode::OK, Json(RawValue::NULL.to_owned()))
+    (StatusCode::OK, Json(()))
 }
 
 #[tokio::main]
