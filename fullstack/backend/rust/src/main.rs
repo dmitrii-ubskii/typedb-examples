@@ -21,23 +21,25 @@ use typedb_driver::{
 mod config;
 mod query;
 
-async fn get_page_list(State(driver): State<Arc<TypeDBDriver>>) -> Json<JSON> {
+async fn get_page_list(State(driver): State<Arc<TypeDBDriver>>) -> Json<Vec<ConceptDocument>> {
     let transaction = driver.transaction(config::TYPEDB_DATABASE, TransactionType::Read).await.unwrap();
     let result = transaction.query(query::PAGE_LIST_QUERY).await.unwrap();
-    Json(JSON::Array(result.into_documents().map_ok(ConceptDocument::into_json).try_collect::<Vec<_>>().await.unwrap()))
+    Json(result.into_documents().try_collect().await.unwrap())
 }
 
-async fn get_location_page_list(State(driver): State<Arc<TypeDBDriver>>, Path(place_id): Path<String>) -> Json<JSON> {
+async fn get_location_page_list(
+    State(driver): State<Arc<TypeDBDriver>>,
+    Path(place_id): Path<String>,
+) -> Json<Vec<ConceptDocument>> {
     let transaction = driver.transaction(config::TYPEDB_DATABASE, TransactionType::Read).await.unwrap();
     let result = transaction.query(query::location_query(&place_id)).await.unwrap();
-    Json(JSON::Array(result.into_documents().map_ok(ConceptDocument::into_json).try_collect::<Vec<_>>().await.unwrap()))
+    Json(result.into_documents().try_collect().await.unwrap())
 }
 
-async fn get_profile(State(driver): State<Arc<TypeDBDriver>>, Path(id): Path<String>) -> Json<Option<JSON>> {
+async fn get_profile(State(driver): State<Arc<TypeDBDriver>>, Path(id): Path<String>) -> Json<Option<ConceptDocument>> {
     let transaction = driver.transaction(config::TYPEDB_DATABASE, TransactionType::Read).await.unwrap();
     let result = transaction.query(query::page_query(&id)).await.unwrap();
-    let doc = result.into_documents().next().await.transpose().unwrap();
-    Json(doc.map(ConceptDocument::into_json))
+    Json(result.into_documents().next().await.transpose().unwrap())
 }
 
 async fn get_media(Path(_id): Path<String>) -> impl IntoResponse {
@@ -59,10 +61,10 @@ struct PostQuery {
 async fn get_posts(
     State(driver): State<Arc<TypeDBDriver>>,
     Query(PostQuery { page_id }): Query<PostQuery>,
-) -> Json<JSON> {
+) -> Json<Vec<ConceptDocument>> {
     let transaction = driver.transaction(config::TYPEDB_DATABASE, TransactionType::Read).await.unwrap();
     let result = transaction.query(query::posts_query(&page_id)).await.unwrap();
-    Json(JSON::Array(result.into_documents().map_ok(ConceptDocument::into_json).try_collect::<Vec<_>>().await.unwrap()))
+    Json(result.into_documents().try_collect().await.unwrap())
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,10 +76,10 @@ struct CommentQuery {
 async fn get_comments(
     State(driver): State<Arc<TypeDBDriver>>,
     Query(CommentQuery { post_id }): Query<CommentQuery>,
-) -> Json<JSON> {
+) -> Json<Vec<ConceptDocument>> {
     let transaction = driver.transaction(config::TYPEDB_DATABASE, TransactionType::Read).await.unwrap();
     let result = transaction.query(query::comments_query(&post_id)).await.unwrap();
-    Json(JSON::Array(result.into_documents().map_ok(ConceptDocument::into_json).try_collect::<Vec<_>>().await.unwrap()))
+    Json(result.into_documents().try_collect().await.unwrap())
 }
 
 #[serde_as]
